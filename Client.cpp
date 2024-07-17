@@ -1,46 +1,62 @@
-#include <iostream>
-#include <boost/asio.hpp>
-
 #include "Common.hpp"
 #include "json.hpp"
 
+#include <boost/asio.hpp>
+#include <boost/asio/ip/tcp.hpp>
+
+#include <iostream>
+
+
 using boost::asio::ip::tcp;
 
-// Отправка сообщения на сервер по шаблону.
-void SendMessage(
-    tcp::socket& aSocket,
-    const std::string& aId,
-    const std::string& aRequestType,
-    const std::string& aMessage)
+static void SendMessage (
+    tcp::socket& theSocket,
+    const std::string& theId,
+    const std::string& theRequestType,
+    const std::string& theMessage)
 {
-    nlohmann::json req;
-    req["UserId"] = aId;
-    req["ReqType"] = aRequestType;
-    req["Message"] = aMessage;
+    nlohmann::json aReq;
+    aReq["UserId"] = theId;
+    aReq["ReqType"] = theRequestType;
+    aReq["Message"] = theMessage;
 
-    std::string request = req.dump();
-    boost::asio::write(aSocket, boost::asio::buffer(request, request.size()));
+    std::string aRequest = aReq.dump();
+    boost::asio::write (theSocket, boost::asio::buffer (aRequest, aRequest.size()));
 }
 
-// Возвращает строку с ответом сервера на последний запрос.
-std::string ReadMessage(tcp::socket& aSocket)
+static void SendMessage (
+    tcp::socket& theSocket,
+    const std::string& theId,
+    const std::string& theRequestType,
+    const std::string& thePrice,
+    const std::string& theCount)
+{
+    nlohmann::json aReq;
+    aReq["UserId"] = theId;
+    aReq["ReqType"] = theRequestType;
+    aReq["Price"] = thePrice;
+    aReq["Count"] = theCount;
+
+    std::string aRequest = aReq.dump();
+    boost::asio::write (theSocket, boost::asio::buffer (aRequest, aRequest.size()));
+}
+
+static std::string ReadMessage (tcp::socket& theSocket)
 {
     boost::asio::streambuf b;
-    boost::asio::read_until(aSocket, b, "\0");
-    std::istream is(&b);
-    std::string line(std::istreambuf_iterator<char>(is), {});
+    boost::asio::read_until (theSocket, b, "\0");
+    std::istream is (&b);
+    std::string line (std::istreambuf_iterator<char> (is), {});
     return line;
 }
 
-// "Создаём" пользователя, получаем его ID.
-std::string ProcessRegistration(tcp::socket& aSocket)
+static std::string ProcessRegistration (tcp::socket& aSocket)
 {
     std::string name;
     std::cout << "Hello! Enter your name: ";
     std::cin >> name;
 
-    // Для регистрации Id не нужен, заполним его нулём
-    SendMessage(aSocket, "0", Requests::Registration, name);
+    SendMessage (aSocket, "0", Requests::Registration, name);
     return ReadMessage(aSocket);
 }
 
@@ -50,24 +66,22 @@ int main()
     {
         boost::asio::io_service io_service;
 
-        tcp::resolver resolver(io_service);
-        tcp::resolver::query query(tcp::v4(), "127.0.0.1", std::to_string(port));
-        tcp::resolver::iterator iterator = resolver.resolve(query);
+        tcp::resolver resolver (io_service);
+        tcp::resolver::query query (tcp::v4(), "127.0.0.1", std::to_string (port));
+        tcp::resolver::iterator iterator = resolver.resolve (query);
 
-        tcp::socket s(io_service);
-        s.connect(*iterator);
+        tcp::socket aSocket (io_service);
+        aSocket.connect (*iterator);
 
-        // Мы предполагаем, что для идентификации пользователя будет использоваться ID.
-        // Тут мы "регистрируем" пользователя - отправляем на сервер имя, а сервер возвращает нам ID.
-        // Этот ID далее используется при отправке запросов.
-        std::string my_id = ProcessRegistration(s);
+        std::string my_id = ProcessRegistration (aSocket);
 
         while (true)
         {
-            // Тут реализовано "бесконечное" меню.
-            std::cout << "Menu:\n"
-                         "1) Hello Request\n"
-                         "2) Exit\n"
+            std::cout <<    "Menu:\n"
+                            "1) Buy Request\n"
+                            "2) Sale Request\n"
+                            "3) Bill Request\n"
+                            "0) Exit\n"
                          << std::endl;
 
             short menu_option_num;
@@ -76,15 +90,39 @@ int main()
             {
                 case 1:
                 {
-                    // Для примера того, как может выглядить взаимодействие с сервером
-                    // реализован один единственный метод - Hello.
-                    // Этот метод получает от сервера приветствие с именем клиента,
-                    // отправляя серверу id, полученный при регистрации.
-                    SendMessage(s, my_id, Requests::Hello, "");
-                    std::cout << ReadMessage(s);
+                    {
+                        std::string aPrice, aCount;
+                        std::cout << "Enter a price of USD : " << std::endl;
+                        std::cin >> aPrice;
+                        std::cout << "Enter a count of USDs : " << std::endl;
+                        std::cin >> aCount;
+                        SendMessage (aSocket, my_id, Requests::Buy, aPrice, aCount);
+                    }
+
+                    std::cout << ReadMessage (aSocket);
                     break;
                 }
                 case 2:
+                {
+                    {
+                        std::string aPrice, aCount;
+                        std::cout << "Enter a price of USD : " << std::endl;
+                        std::cin >> aPrice;
+                        std::cout << "Enter a count of USDs : " << std::endl;
+                        std::cin >> aCount;
+                        SendMessage (aSocket, my_id, Requests::Sale, aPrice, aCount);
+                    }
+
+                    std::cout << ReadMessage (aSocket);
+                    break;
+                }
+                case 3:
+                {
+                    SendMessage (aSocket, my_id, Requests::Bill, "");
+                    std::cout << ReadMessage (aSocket);
+                    break;
+                }
+                case 0:
                 {
                     exit(0);
                     break;
@@ -96,9 +134,9 @@ int main()
             }
         }
     }
-    catch (std::exception& e)
+    catch (std::exception& theException)
     {
-        std::cerr << "Exception: " << e.what() << "\n";
+        std::cerr << "Exception: " << theException.what() << "\n";
     }
 
     return 0;

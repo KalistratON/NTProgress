@@ -1,54 +1,74 @@
-#include <cstdlib>
-#include <iostream>
-#include <boost/bind/bind.hpp>
-#include <boost/asio.hpp>
 #include "json.hpp"
 #include "Common.hpp"
+#include "OrderBook.h"
+#include "Roster.h"
+
+#include <boost/bind/bind.hpp>
+#include <boost/asio.hpp>
+
+#include <cstdlib>
+#include <iostream>
+
 
 using boost::asio::ip::tcp;
 
 class Core
 {
 public:
-    // "Регистрирует" нового пользователя и возвращает его ID.
-    std::string RegisterNewUser(const std::string& aUserName)
+    std::string RegisterNewUser (const std::string& theUserName)
     {
         size_t newUserId = mUsers.size();
-        mUsers[newUserId] = aUserName;
-
-        return std::to_string(newUserId);
+        mUsers[newUserId] = theUserName;
+        myOrderBook.GetRoster().UpdateBill (theUserName, 0, 0);
+        return std::to_string (newUserId);
     }
 
-    // Запрос имени клиента по ID
-    std::string GetUserName(const std::string& aUserId)
+    std::string GetUserName (const std::string& aUserId)
     {
-        const auto userIt = mUsers.find(std::stoi(aUserId));
-        if (userIt == mUsers.cend())
-        {
+        const auto userIt = mUsers.find (std::stoi (aUserId));
+        if (userIt == mUsers.cend()) {
             return "Error! Unknown User";
-        }
-        else
-        {
+        } else {
             return userIt->second;
         }
     }
 
+    void SubmitBuyRequest (const std::string& theClient, const std::string& theCount, const std::string& thePrice)
+    {
+        myOrderBook.SubmitBuyRequest (theClient, std::stoull (theCount), std::stod (thePrice));
+    }
+
+    void SubmitSaleRequest (const std::string& theClient, const std::string& theCount, const std::string& thePrice)
+    {
+        myOrderBook.SubmitSaleRequest (theClient, std::stoull (theCount), std::stod (thePrice));
+    }
+
+    std::string GetBill (const std::string& theClient)
+    {
+        long anUSD, aRubles;
+        if (!myOrderBook.GetRoster().GetBill(theClient, anUSD, aRubles)) {
+            return "Client " + theClient + " was not found!";
+        }
+
+        return std::to_string(anUSD) + ' ' + std::to_string(aRubles);
+    }
+
 private:
-    // <UserId, UserName>
     std::map<size_t, std::string> mUsers;
+    OrderBook myOrderBook;
 };
 
-Core& GetCore()
+static Core& GetCore()
 {
     static Core core;
     return core;
 }
 
-class session
+class Session
 {
 public:
-    session(boost::asio::io_service& io_service)
-        : socket_(io_service)
+    Session (boost::asio::io_service& io_service)
+        : socket_ (io_service)
     {
     }
 
@@ -59,60 +79,52 @@ public:
 
     void start()
     {
-        socket_.async_read_some(boost::asio::buffer(data_, max_length),
-            boost::bind(&session::handle_read, this,
+        socket_.async_read_some (boost::asio::buffer (data_, max_length),
+            boost::bind (&Session::handle_read, this,
                 boost::asio::placeholders::error,
                 boost::asio::placeholders::bytes_transferred));
     }
 
-    // Обработка полученного сообщения.
-    void handle_read(const boost::system::error_code& error,
+    void handle_read (const boost::system::error_code& error,
         size_t bytes_transferred)
     {
-        if (!error)
-        {
+        if (!error) {
             data_[bytes_transferred] = '\0';
 
-            // Парсим json, который пришёл нам в сообщении.
-            auto j = nlohmann::json::parse(data_);
+            auto j = nlohmann::json::parse (data_);
             auto reqType = j["ReqType"];
 
             std::string reply = "Error! Unknown request type";
-            if (reqType == Requests::Registration)
-            {
-                // Это реквест на регистрацию пользователя.
-                // Добавляем нового пользователя и возвращаем его ID.
-                reply = GetCore().RegisterNewUser(j["Message"]);
-            }
-            else if (reqType == Requests::Hello)
-            {
-                // Это реквест на приветствие.
-                // Находим имя пользователя по ID и приветствуем его по имени.
-                reply = "Hello, " + GetCore().GetUserName(j["UserId"]) + "!\n";
+            if (reqType == Requests::Registration) {
+                reply = GetCore().RegisterNewUser (j["Message"]);
+            } else if (reqType == Requests::Buy) {
+                GetCore().SubmitBuyRequest (GetCore().GetUserNameA (j["UserId"]), j["Count"], j["Price"]);
+                reply.clear();
+            } else if (reqType == Requests::Sale) {
+                GetCore().SubmitSaleRequest (GetCore().GetUserNameA (j["UserId"]), j["Count"], j["Price"]);
+                reply.clear();
+            } else if (reqType == Requests::Bill) {
+                std::string aName = GetCore().GetUserNameA (j["UserId"]);
+                reply = GetCore().GetBill (aName);
             }
 
-            boost::asio::async_write(socket_,
-                boost::asio::buffer(reply, reply.size()),
-                boost::bind(&session::handle_write, this,
+            boost::asio::async_write (socket_,
+                boost::asio::buffer (reply.c_str(), reply.size()),
+                boost::bind (&Session::handle_write, this,
                     boost::asio::placeholders::error));
-        }
-        else
-        {
+        } else {
             delete this;
         }
     }
 
-    void handle_write(const boost::system::error_code& error)
+    void handle_write (const boost::system::error_code& error)
     {
-        if (!error)
-        {
-            socket_.async_read_some(boost::asio::buffer(data_, max_length),
-                boost::bind(&session::handle_read, this,
+        if (!error) {
+            socket_.async_read_some (boost::asio::buffer (data_, max_length),
+                boost::bind (&Session::handle_read, this,
                     boost::asio::placeholders::error,
                     boost::asio::placeholders::bytes_transferred));
-        }
-        else
-        {
+        } else {
             delete this;
         }
     }
@@ -123,35 +135,32 @@ private:
     char data_[max_length];
 };
 
-class server
+class Server
 {
 public:
-    server(boost::asio::io_service& io_service)
-        : io_service_(io_service),
-        acceptor_(io_service, tcp::endpoint(tcp::v4(), port))
+    Server (boost::asio::io_service& io_service)
+        : io_service_ (io_service),
+        acceptor_ (io_service, tcp::endpoint (tcp::v4(), port))
     {
         std::cout << "Server started! Listen " << port << " port" << std::endl;
 
-        session* new_session = new session(io_service_);
-        acceptor_.async_accept(new_session->socket(),
-            boost::bind(&server::handle_accept, this, new_session,
+        Session* new_session = new Session (io_service_);
+        acceptor_.async_accept (new_session->socket(),
+            boost::bind (&Server::handle_accept, this, new_session,
                 boost::asio::placeholders::error));
     }
 
-    void handle_accept(session* new_session,
+    void handle_accept (Session* new_Session,
         const boost::system::error_code& error)
     {
-        if (!error)
-        {
-            new_session->start();
-            new_session = new session(io_service_);
-            acceptor_.async_accept(new_session->socket(),
-                boost::bind(&server::handle_accept, this, new_session,
+        if (!error) {
+            new_Session->start();
+            new_Session = new Session (io_service_);
+            acceptor_.async_accept (new_Session->socket(),
+                boost::bind (&Server::handle_accept, this, new_Session,
                     boost::asio::placeholders::error));
-        }
-        else
-        {
-            delete new_session;
+        } else {
+            delete new_Session;
         }
     }
 
@@ -167,13 +176,13 @@ int main()
         boost::asio::io_service io_service;
         static Core core;
 
-        server s(io_service);
+        Server server (io_service);
 
         io_service.run();
     }
-    catch (std::exception& e)
+    catch (std::exception& theException)
     {
-        std::cerr << "Exception: " << e.what() << "\n";
+        std::cerr << "Exception: " << theException.what() << "\n";
     }
 
     return 0;
