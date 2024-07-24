@@ -14,6 +14,7 @@ public:
     OrderBook();
     void SubmitBuyRequest (const std::string& theClient, size_t theCount, double thePrice);
     void SubmitSaleRequest (const std::string& theClient, size_t theCount, double thePrice);
+    StockMarket GetActiveRequests();
     Roster& GetRoster();
     void Update();
 

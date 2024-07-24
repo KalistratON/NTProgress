@@ -81,6 +81,7 @@ int main()
                             "1) Buy Request\n"
                             "2) Sale Request\n"
                             "3) Bill Request\n"
+                            "4) Show Active Requests\n"
                             "0) Exit\n"
                          << std::endl;
 
@@ -98,8 +99,6 @@ int main()
                         std::cin >> aCount;
                         SendMessage (aSocket, my_id, Requests::Buy, aPrice, aCount);
                     }
-
-                    std::cout << ReadMessage (aSocket);
                     break;
                 }
                 case 2:
@@ -112,13 +111,17 @@ int main()
                         std::cin >> aCount;
                         SendMessage (aSocket, my_id, Requests::Sale, aPrice, aCount);
                     }
-
-                    std::cout << ReadMessage (aSocket);
                     break;
                 }
                 case 3:
                 {
                     SendMessage (aSocket, my_id, Requests::Bill, "");
+                    std::cout << ReadMessage (aSocket);
+                    break;
+                }
+                case 4:
+                {
+                    SendMessage (aSocket, my_id, Requests::ActiveRequests, "");
                     std::cout << ReadMessage (aSocket);
                     break;
                 }

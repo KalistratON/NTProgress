@@ -2,8 +2,16 @@
 
 #include <string>
 #include <memory>
+#include <map>
 
 class RosterImpl;
+
+struct OrderRequest {
+    size_t myCount;
+    std::string myClientName;
+};
+
+using StockMarket = std::pair <std::multimap<double, OrderRequest, std::greater<double>>, std::multimap<double, OrderRequest>>;
 
 class Roster {
 

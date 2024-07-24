@@ -19,6 +19,11 @@ void OrderBookImpl::SubmitSaleRequest (const std::string& theClient, size_t theC
     Update();
 }
 
+StockMarket OrderBookImpl::GetActiveRequests()
+{
+    return std::make_pair (myClientBuyRequests, myClientSaleRequests);
+}
+
 void OrderBookImpl::Update()
 {
     if (!myClientBuyRequests.size() || !myClientSaleRequests.size()) {
@@ -57,6 +62,11 @@ void OrderBook::SubmitBuyRequest (const std::string& theClient, size_t theCount,
 void OrderBook::SubmitSaleRequest (const std::string& theClient, size_t theCount, double thePrice)
 {
     myImpl->SubmitSaleRequest (theClient, theCount, thePrice);
+}
+
+StockMarket OrderBook::GetActiveRequests()
+{
+    return myImpl->GetActiveRequests();
 }
 
 void OrderBook::Update()

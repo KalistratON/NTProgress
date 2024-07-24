@@ -7,7 +7,9 @@
 #include <boost/asio.hpp>
 
 #include <cstdlib>
+#include <iomanip>
 #include <iostream>
+#include <sstream>
 
 
 using boost::asio::ip::tcp;
@@ -47,10 +49,41 @@ public:
     {
         long anUSD, aRubles;
         if (!myOrderBook.GetRoster().GetBill(theClient, anUSD, aRubles)) {
-            return "Client " + theClient + " was not found!";
+            return "Client " + theClient + " was not found!\n";
         }
 
-        return std::to_string(anUSD) + ' ' + std::to_string(aRubles);
+        return std::to_string(anUSD) + ' ' + std::to_string(aRubles) + '\n';
+    }
+
+    std::string GetActiveRequests()
+    {
+        std::stringstream aStream;
+
+        auto anActiveRequests = myOrderBook.GetActiveRequests();
+
+        aStream << "---------------------------------------\n";
+        aStream << "Buy requests\n";
+        aStream << "---------------------------------------\n";
+        const auto& anActiveBuyRequests = anActiveRequests.first;
+        std::for_each (anActiveBuyRequests.crbegin(), anActiveBuyRequests.crend(), [&](const auto& aRequest) {
+            aStream << aRequest.first << std::setw (10) 
+                    << aRequest.second.myCount << std::setw (10) 
+                    << aRequest.second.myClientName << std::setw (10) << '\n';
+        });
+
+        aStream << "---------------------------------------\n";
+        aStream << "---------------------------------------\n";
+
+        const auto& anActiveSaleRequests = anActiveRequests.second;
+        std::for_each (anActiveSaleRequests.cbegin(), anActiveSaleRequests.cend(), [&](const auto& aRequest) {
+            aStream << aRequest.first << std::setw (10) 
+                    << aRequest.second.myCount << std::setw (10) 
+                    << aRequest.second.myClientName << std::setw (10) << '\n';
+        });
+        aStream << "---------------------------------------\n";
+        aStream << "Sale requests\n";
+        aStream << "---------------------------------------\n";
+        return aStream.str();
     }
 
 private:
@@ -106,6 +139,8 @@ public:
             } else if (reqType == Requests::Bill) {
                 std::string aName = GetCore().GetUserNameA (j["UserId"]);
                 reply = GetCore().GetBill (aName);
+            } else if (reqType == Requests::ActiveRequests) {
+                reply = GetCore().GetActiveRequests();
             }
 
             boost::asio::async_write (socket_,
